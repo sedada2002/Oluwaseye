@@ -8,14 +8,14 @@ import {
   promptFrameworks,
   servicePackages,
   sprintRoadmap
-} from "../consultingFirm/firmAssets.js";
-import { defaultIndustries, defaultVirginiaAreas, industryLabels } from "../prospecting/catalog.js";
-import { ProspectStore } from "../prospecting/ProspectStore.js";
-import { VirginiaProspectFinder } from "../prospecting/VirginiaProspectFinder.js";
-import type { ProspectFinderOptions, ProspectIndustry, ProspectSearchArea, ProspectStoreRecord } from "../prospecting/types.js";
-import { fortuneItCustomerFacingTargets } from "../recruiting/companyCatalog.js";
-import { JobPostingFinder } from "../recruiting/JobPostingFinder.js";
-import { JobPostingStore } from "../recruiting/JobPostingStore.js";
+} from "../../consultingFirm/firmAssets.js";
+import { defaultIndustries, defaultVirginiaAreas, industryLabels } from "../../prospecting/catalog.js";
+import { ProspectStore } from "../../prospecting/ProspectStore.js";
+import { VirginiaProspectFinder } from "../../prospecting/VirginiaProspectFinder.js";
+import type { ProspectFinderOptions, ProspectIndustry, ProspectSearchArea, ProspectStoreRecord } from "../../prospecting/types.js";
+import { fortuneItCustomerFacingTargets } from "../../recruiting/companyCatalog.js";
+import { JobPostingFinder } from "../../recruiting/JobPostingFinder.js";
+import { JobPostingStore } from "../../recruiting/JobPostingStore.js";
 
 const portArgument = process.argv.find((argument) => argument.startsWith("--port="));
 const PORT = Number(portArgument?.slice("--port=".length) ?? process.env["AI_CONSULTING_PORT"] ?? "4280");

@@ -9,5 +9,5 @@ if errorlevel 1 (
   pause >nul
   exit /b 1
 )
-".tools\node\node.exe" "dist\consultingApp\server.js" --port=4280
+".tools\node\node.exe" "dist\projects\consultingFirm\server.js" --port=4280
 endlocal

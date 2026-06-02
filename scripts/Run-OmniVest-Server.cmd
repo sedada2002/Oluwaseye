@@ -9,5 +9,5 @@ if errorlevel 1 (
   pause >nul
   exit /b 1
 )
-".tools\node\node.exe" "dist\dev\mockServer.js" --port=4174
+".tools\node\node.exe" "dist\projects\omnivest\server.js" --port=4174
 endlocal

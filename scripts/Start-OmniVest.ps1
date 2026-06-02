@@ -9,7 +9,7 @@ $Workspace = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $NodeDir = Join-Path $Workspace ".tools\node"
 $NodeExe = Join-Path $NodeDir "node.exe"
 $NpmCmd = Join-Path $NodeDir "npm.cmd"
-$ServerEntry = Join-Path $Workspace "dist\dev\mockServer.js"
+$ServerEntry = Join-Path $Workspace "dist\projects\omnivest\server.js"
 $PidFile = Join-Path $Workspace ".tools\omnivest-test-server.pid"
 $OutLog = Join-Path $Workspace ".tools\omnivest-test-server.out.log"
 $ErrLog = Join-Path $Workspace ".tools\omnivest-test-server.err.log"
@@ -21,7 +21,7 @@ function Test-OmniVestHealth {
 
   try {
     $response = Invoke-RestMethod -Uri $Uri -TimeoutSec 2
-    return ($response.ok -eq $true -and $response.service -eq "omnivest-local-test-harness")
+    return ($response.ok -eq $true -and $response.service -eq "omnivest-stock-trading-harness")
   } catch {
     return $false
   }

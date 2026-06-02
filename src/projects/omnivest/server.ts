@@ -2,17 +2,17 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { URL } from "node:url";
 import { z } from "zod";
 
-import type { IBrokerageAdapter } from "../domain/brokerage/IBrokerageAdapter.js";
+import type { IBrokerageAdapter } from "../../domain/brokerage/IBrokerageAdapter.js";
 import type {
   BrokerOrderResult,
   ConnectionValidation,
   OrderPayload,
   PortfolioBalance,
   Position
-} from "../domain/brokerage/types.js";
-import { PortfolioRebalanceService } from "../domain/engine/PortfolioRebalanceService.js";
-import type { RebalanceConfig, TargetAllocation, UserPortfolio } from "../domain/engine/types.js";
-import { OrderExecutionCoordinator } from "../domain/execution/OrderExecutionCoordinator.js";
+} from "../../domain/brokerage/types.js";
+import { PortfolioRebalanceService } from "../../domain/engine/PortfolioRebalanceService.js";
+import type { RebalanceConfig, TargetAllocation, UserPortfolio } from "../../domain/engine/types.js";
+import { OrderExecutionCoordinator } from "../../domain/execution/OrderExecutionCoordinator.js";
 import type {
   DistributedLock,
   ExecutionRequest,
@@ -22,8 +22,8 @@ import type {
   OrderLifecycleState,
   OrderMetadata,
   QuoteProvider
-} from "../domain/execution/types.js";
-import { moneyToDecimalString, usdFromDecimal, weightFromDecimal, type Money } from "../shared/money.js";
+} from "../../domain/execution/types.js";
+import { moneyToDecimalString, usdFromDecimal, weightFromDecimal, type Money } from "../../shared/money.js";
 
 const portArgument = process.argv.find((argument) => argument.startsWith("--port="));
 const PORT = Number(portArgument?.slice("--port=".length) ?? process.env["OMNIVEST_TEST_PORT"] ?? "4174");
