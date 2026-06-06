@@ -27,5 +27,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Privacy scan
+        run: npm run privacy:scan
+
       - name: Emit build
         run: npm run build:emit

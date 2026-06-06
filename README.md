@@ -1,4 +1,4 @@
-# Oluwaseye Project Workspace
+# Healthcare Operations Project Workspace
 
 This repository is organized as three separate TypeScript projects that share common backend modules where useful.
 
@@ -19,6 +19,12 @@ Shared modules live outside those project folders:
 - `src/shared` - shared money and error helpers.
 
 Generated data, compiled output, local runtimes, and private environment files are ignored by Git.
+
+## CRM Planning And Privacy Docs
+
+- `docs/crm/DISCOVERY.md`
+- `docs/crm/PRD.md`
+- `PRIVACY.md`
 
 ## Install
 

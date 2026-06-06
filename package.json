@@ -17,7 +17,8 @@
     "prospects:va": "npm run build:emit && node dist/prospecting/cli/findVirginiaProspects.js",
     "start:test": "npm run build:emit && node dist/dev/mockServer.js",
     "test": "vitest run",
-    "lint": "eslint \"src/**/*.ts\""
+    "lint": "eslint \"src/**/*.ts\"",
+    "privacy:scan": "node scripts/privacy-scan.mjs"
   },
   "engines": {
     "node": ">=20.11.0"

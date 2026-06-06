@@ -3,6 +3,7 @@ dist/
 .tools/
 .cache/
 output/
+outputs/
 
 .env
 .env.local

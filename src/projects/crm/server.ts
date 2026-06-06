@@ -26,6 +26,16 @@ const readinessStatuses = ["Needed", "Planned", "In progress", "Ready", "Blocked
 const readinessCategories = ["Security", "Compliance", "Data", "Operations", "Deployment", "Workflow", "Reporting"] as const;
 const integrationCategories = ["EHR", "Calendar", "Email", "SMS/phone", "Insurance verification", "Forms/intake", "Website leads", "Contacts/CRM", "Marketing"] as const;
 const integrationStatuses = ["Needed", "Evaluating", "Configured", "Live", "Blocked"] as const;
+const revenueCaseTypes = ["False decline", "Fraud alert", "Dispute"] as const;
+const revenueCaseStatuses = ["New", "Investigating", "Evidence requested", "Submitted", "Resolved", "Closed"] as const;
+const revenueCasePriorities = ["High", "Medium", "Low"] as const;
+const revenueCaseOutcomes = ["Open", "Approved", "Recovered", "Written off", "Confirmed fraud", "Duplicate"] as const;
+const privacyNotice = {
+  piiPolicy: "CRM records stay local in this prototype. No CRM record is transmitted to third-party vendors by the CRM server.",
+  vendorPolicy: "Integration records are planning metadata only. Marking an integration Live does not call an external API.",
+  productionGate: "Before sending PHI/PII to any vendor, require authentication, RBAC, audit logs, encryption, vendor BAA, and explicit connector code review.",
+  syntheticSeedData: "Seed records use fictional placeholder data and non-routable example.invalid email addresses."
+} as const;
 
 const referralSourceSchema = z.object({
   name: z.string().trim().min(1),
@@ -94,6 +104,30 @@ const integrationSchema = z.object({
   nextStep: z.string().trim().default("")
 });
 
+const revenueCaseSchema = z.object({
+  caseType: z.enum(revenueCaseTypes),
+  status: z.enum(revenueCaseStatuses).default("New"),
+  priority: z.enum(revenueCasePriorities).default("High"),
+  patientId: z.string().trim().default(""),
+  payerOrProcessor: z.string().trim().default(""),
+  transactionReference: z.string().trim().default(""),
+  amountAtRisk: z.number().min(0).max(1_000_000).default(0),
+  openedAt: z.string().trim().default(""),
+  dueAt: z.string().trim().default(""),
+  owner: z.string().trim().default(""),
+  evidenceNeeded: z.string().trim().default(""),
+  nextAction: z.string().trim().default(""),
+  outcome: z.enum(revenueCaseOutcomes).default("Open"),
+  notes: z.string().trim().default("")
+});
+
+const revenueCaseStatusUpdateSchema = z.object({
+  status: z.enum(revenueCaseStatuses),
+  outcome: z.enum(revenueCaseOutcomes).optional(),
+  nextAction: z.string().trim().optional(),
+  dueAt: z.string().trim().optional()
+});
+
 const statusUpdateSchema = z.object({
   inquiryStatus: z.enum(inquiryStatuses),
   insuranceStatus: z.enum(insuranceStatuses).optional(),
@@ -109,6 +143,10 @@ type ReadinessStatus = (typeof readinessStatuses)[number];
 type ReadinessCategory = (typeof readinessCategories)[number];
 type IntegrationCategory = (typeof integrationCategories)[number];
 type IntegrationStatus = (typeof integrationStatuses)[number];
+type RevenueCaseType = (typeof revenueCaseTypes)[number];
+type RevenueCaseStatus = (typeof revenueCaseStatuses)[number];
+type RevenueCasePriority = (typeof revenueCasePriorities)[number];
+type RevenueCaseOutcome = (typeof revenueCaseOutcomes)[number];
 
 interface ReferralSource {
   id: string;
@@ -196,6 +234,26 @@ interface DataIntegration {
   updatedAt: string;
 }
 
+interface RevenueProtectionCase {
+  id: string;
+  caseType: RevenueCaseType;
+  status: RevenueCaseStatus;
+  priority: RevenueCasePriority;
+  patientId: string;
+  payerOrProcessor: string;
+  transactionReference: string;
+  amountAtRisk: number;
+  openedAt: string;
+  dueAt: string;
+  owner: string;
+  evidenceNeeded: string;
+  nextAction: string;
+  outcome: RevenueCaseOutcome;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface CrmState {
   referralSources: ReferralSource[];
   prospectivePatients: ProspectivePatient[];
@@ -203,6 +261,7 @@ interface CrmState {
   campaigns: Campaign[];
   enterpriseControls: EnterpriseControl[];
   integrations: DataIntegration[];
+  revenueCases: RevenueProtectionCase[];
 }
 
 const server = createServer((request, response) => {
@@ -230,9 +289,16 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
           activities: "/api/activities",
           campaigns: "/api/campaigns",
           enterpriseControls: "/api/enterprise-controls",
-          integrations: "/api/integrations"
+          integrations: "/api/integrations",
+          revenueCases: "/api/revenue-cases",
+          privacy: "/api/privacy"
         }
       });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/privacy") {
+      sendJson(response, 200, { ok: true, privacyNotice });
       return;
     }
 
@@ -351,6 +417,48 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
 
+    if (request.method === "POST" && requestUrl.pathname === "/api/revenue-cases") {
+      const input = revenueCaseSchema.parse(await readJson(request));
+      const state = await store.update((current) => {
+        const now = new Date().toISOString();
+        current.revenueCases.unshift({
+          id: createId("rev"),
+          ...input,
+          openedAt: input.openedAt || now.slice(0, 10),
+          createdAt: now,
+          updatedAt: now
+        });
+        return current;
+      });
+      sendJson(response, 201, { ok: true, state, summary: summarize(state) });
+      return;
+    }
+
+    if (request.method === "PATCH" && requestUrl.pathname.startsWith("/api/revenue-cases/")) {
+      const caseId = requestUrl.pathname.slice("/api/revenue-cases/".length).replace(/\/status$/, "");
+      const input = revenueCaseStatusUpdateSchema.parse(await readJson(request));
+      const state = await store.update((current) => {
+        const revenueCase = current.revenueCases.find((item) => item.id === caseId);
+        if (!revenueCase) {
+          throw new RouteError(404, "Revenue protection case was not found.");
+        }
+        revenueCase.status = input.status;
+        if (input.outcome !== undefined) {
+          revenueCase.outcome = input.outcome;
+        }
+        if (input.nextAction !== undefined) {
+          revenueCase.nextAction = input.nextAction;
+        }
+        if (input.dueAt !== undefined) {
+          revenueCase.dueAt = input.dueAt;
+        }
+        revenueCase.updatedAt = new Date().toISOString();
+        return current;
+      });
+      sendJson(response, 200, { ok: true, state, summary: summarize(state) });
+      return;
+    }
+
     sendJson(response, 404, { ok: false, message: "Route not found in behavioral health CRM." });
   } catch (error: unknown) {
     const statusCode = error instanceof RouteError ? error.statusCode : error instanceof z.ZodError ? 400 : 500;
@@ -409,14 +517,14 @@ function seedState(): CrmState {
     referralSources: [
       {
         id: sourceOne,
-        name: "Westside Pediatrics",
+        name: "Demo Pediatric Referral Source",
         type: "Primary care physician",
-        organization: "Westside Pediatrics",
-        contactName: "Dr. Morgan Lee",
-        email: "referrals@example.com",
-        phone: "(555) 014-1001",
+        organization: "Demo Pediatrics Group",
+        contactName: "Demo referral coordinator",
+        email: "demo-referrals@example.invalid",
+        phone: "(555) 010-1001",
         relationshipStage: "Active",
-        notes: "Sends ADHD and anxiety referrals. Prefers concise monthly capacity updates.",
+        notes: "Synthetic seed record. Replace with real referral data only after production privacy controls are implemented.",
         referralCount: 1,
         lastContactAt: now,
         createdAt: now,
@@ -424,12 +532,12 @@ function seedState(): CrmState {
       },
       {
         id: sourceTwo,
-        name: "North County Schools",
+        name: "Demo School Referral Source",
         type: "School",
-        organization: "North County Schools",
-        contactName: "Student services office",
+        organization: "Demo School District",
+        contactName: "Demo student services contact",
         email: "",
-        phone: "(555) 014-2010",
+        phone: "(555) 010-2010",
         relationshipStage: "Warm",
         notes: "Good fit for outreach lunch-and-learn.",
         referralCount: 0,
@@ -441,10 +549,10 @@ function seedState(): CrmState {
     prospectivePatients: [
       {
         id: patientOne,
-        displayName: "J. Sample",
-        guardianName: "Parent/guardian",
-        phone: "(555) 014-8877",
-        email: "family@example.com",
+        displayName: "Demo Inquiry Initials",
+        guardianName: "Demo guardian",
+        phone: "(555) 010-8877",
+        email: "demo-family@example.invalid",
         referralSourceId: sourceOne,
         serviceNeed: "Child therapy intake",
         insuranceProvider: "BlueCross",
@@ -453,7 +561,7 @@ function seedState(): CrmState {
         consultationDate: "",
         estimatedMonthlyRevenue: 640,
         nextFollowUpAt: "",
-        notes: "Demo record. Keep live use limited to minimum necessary information.",
+        notes: "Synthetic seed record. Do not enter real PHI until privacy controls, audit logs, and vendor BAAs are in place.",
         createdAt: now,
         updatedAt: now
       }
@@ -487,7 +595,8 @@ function seedState(): CrmState {
       }
     ],
     enterpriseControls: seedEnterpriseControls(now),
-    integrations: seedIntegrations(now)
+    integrations: seedIntegrations(now),
+    revenueCases: seedRevenueCases(now, patientOne)
   };
 }
 
@@ -510,7 +619,7 @@ function seedEnterpriseControls(now: string): EnterpriseControl[] {
 
 function seedIntegrations(now: string): DataIntegration[] {
   return [
-    integration(now, "EHR / practice management", "EHR", "SimplePractice, TherapyNotes, Jane, IntakeQ, Tebra, Athena", "Sync patients, appointments, referrals, and status updates where vendor APIs allow it.", "Requires BAA and careful PHI mapping."),
+    integration(now, "EHR / practice management", "EHR", "SimplePractice, TherapyNotes, Jane, IntakeQ, Tebra, Athena", "Planning item only; no CRM data is sent to vendors by this prototype.", "Requires BAA and careful PHI mapping before any connector is implemented."),
     integration(now, "Calendar scheduling", "Calendar", "Google Calendar, Microsoft Outlook, EHR scheduling", "Read/write consultation slots, reminders, and intake follow-up tasks.", "Avoid putting diagnosis or sensitive clinical detail in calendar text."),
     integration(now, "Email outreach", "Email", "Google Workspace, Microsoft 365, SendGrid", "Send referral follow-ups and track replies or campaign responses.", "Use HIPAA-compliant configuration and avoid PHI in marketing campaigns."),
     integration(now, "SMS and phone", "SMS/phone", "Twilio, RingCentral, Dialpad", "Send reminders, log calls, and capture callback tasks.", "Only use vendors/configurations with BAA support for PHI."),
@@ -522,6 +631,44 @@ function seedIntegrations(now: string): DataIntegration[] {
   ];
 }
 
+function seedRevenueCases(now: string, patientId: string): RevenueProtectionCase[] {
+  return [
+    revenueCase(
+      now,
+      "False decline",
+      "Evidence requested",
+      "High",
+      patientId,
+      "Demo payer / card processor",
+      "TXN-demo-1001",
+      320,
+      "Eligibility showed active coverage, but authorization was declined. Collect payer reference, benefits screenshot, and patient consent before appeal."
+    ),
+    revenueCase(
+      now,
+      "Dispute",
+      "Investigating",
+      "Medium",
+      "",
+      "Demo payment processor",
+      "DSP-demo-2044",
+      180,
+      "Review signed financial policy, appointment attendance record, payment receipt, and communication history before submitting evidence."
+    ),
+    revenueCase(
+      now,
+      "Fraud alert",
+      "New",
+      "High",
+      "",
+      "Demo processor risk queue",
+      "FRD-demo-3307",
+      0,
+      "Verify account activity, lock suspicious payment methods, and document contact attempts before reopening billing workflow."
+    )
+  ];
+}
+
 function control(now: string, title: string, category: ReadinessCategory, priority: "High" | "Medium" | "Low", notes: string): EnterpriseControl {
   return {
     id: createId("ctl"),
@@ -530,6 +677,38 @@ function control(now: string, title: string, category: ReadinessCategory, priori
     status: "Needed",
     owner: "",
     priority,
+    notes,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function revenueCase(
+  now: string,
+  caseType: RevenueCaseType,
+  status: RevenueCaseStatus,
+  priority: RevenueCasePriority,
+  patientId: string,
+  payerOrProcessor: string,
+  transactionReference: string,
+  amountAtRisk: number,
+  notes: string
+): RevenueProtectionCase {
+  return {
+    id: createId("rev"),
+    caseType,
+    status,
+    priority,
+    patientId,
+    payerOrProcessor,
+    transactionReference,
+    amountAtRisk,
+    openedAt: now.slice(0, 10),
+    dueAt: "",
+    owner: "",
+    evidenceNeeded: "Eligibility result, billing record, consent/authorization, communication log, and processor or payer reference.",
+    nextAction: "Assign owner, gather evidence, and submit appeal or dispute packet.",
+    outcome: "Open",
     notes,
     createdAt: now,
     updatedAt: now
@@ -558,7 +737,8 @@ function normalizeState(value: Partial<CrmState>): CrmState {
     activities: Array.isArray(value.activities) ? value.activities : [],
     campaigns: Array.isArray(value.campaigns) ? value.campaigns : [],
     enterpriseControls: Array.isArray(value.enterpriseControls) ? value.enterpriseControls : seedEnterpriseControls(new Date().toISOString()),
-    integrations: Array.isArray(value.integrations) ? value.integrations : seedIntegrations(new Date().toISOString())
+    integrations: Array.isArray(value.integrations) ? value.integrations : seedIntegrations(new Date().toISOString()),
+    revenueCases: Array.isArray(value.revenueCases) ? value.revenueCases : seedRevenueCases(new Date().toISOString(), "")
   };
 }
 
@@ -570,6 +750,11 @@ function summarize(state: CrmState): Record<string, number> {
   const openFollowUps = state.activities.filter((activity) => activity.completedAt.length === 0).length;
   const openControls = state.enterpriseControls.filter((controlItem) => controlItem.status !== "Ready").length;
   const liveIntegrations = state.integrations.filter((integrationItem) => integrationItem.status === "Live").length;
+  const openRevenueCases = state.revenueCases.filter((caseItem) => !["Resolved", "Closed"].includes(caseItem.status)).length;
+  const highPriorityRevenueCases = state.revenueCases.filter((caseItem) => caseItem.priority === "High" && !["Resolved", "Closed"].includes(caseItem.status)).length;
+  const amountAtRisk = state.revenueCases
+    .filter((caseItem) => !["Resolved", "Closed"].includes(caseItem.status))
+    .reduce((total, caseItem) => total + caseItem.amountAtRisk, 0);
   const pipelineRevenue = state.prospectivePatients
     .filter((patient) => !["Closed"].includes(patient.inquiryStatus))
     .reduce((total, patient) => total + patient.estimatedMonthlyRevenue, 0);
@@ -584,6 +769,9 @@ function summarize(state: CrmState): Record<string, number> {
     campaigns: state.campaigns.length,
     openControls,
     liveIntegrations,
+    openRevenueCases,
+    highPriorityRevenueCases,
+    amountAtRisk,
     pipelineRevenue
   };
 }
@@ -618,7 +806,7 @@ function renderCrmPage(): string {
     th { color: #506269; font-size: 12px; }
     tr[data-id] { cursor: pointer; }
     tr[data-id]:hover { background: #f2f8f6; }
-    .stats { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
     .stat strong { display: block; font-size: 22px; margin-bottom: 2px; }
     .workspace { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr); gap: 14px; align-items: start; }
     .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -649,6 +837,7 @@ function renderCrmPage(): string {
       <button data-tab="sources">Referral Sources</button>
       <button data-tab="activities">Follow-Ups</button>
       <button data-tab="campaigns">Marketing</button>
+      <button data-tab="revenue">Revenue Protection</button>
       <button data-tab="enterprise">Enterprise Readiness</button>
       <button data-tab="integrations">Data Integrations</button>
     </section>
@@ -681,7 +870,11 @@ function renderCrmPage(): string {
       readinessStatuses: ${JSON.stringify(readinessStatuses)},
       readinessCategories: ${JSON.stringify(readinessCategories)},
       integrationStatuses: ${JSON.stringify(integrationStatuses)},
-      integrationCategories: ${JSON.stringify(integrationCategories)}
+      integrationCategories: ${JSON.stringify(integrationCategories)},
+      revenueCaseTypes: ${JSON.stringify(revenueCaseTypes)},
+      revenueCaseStatuses: ${JSON.stringify(revenueCaseStatuses)},
+      revenueCasePriorities: ${JSON.stringify(revenueCasePriorities)},
+      revenueCaseOutcomes: ${JSON.stringify(revenueCaseOutcomes)}
     };
 
     async function api(url, options) {
@@ -713,6 +906,9 @@ function renderCrmPage(): string {
         ["Consults", summary.scheduledConsults],
         ["Waitlist", summary.waitlist],
         ["Open follow-ups", summary.openFollowUps],
+        ["Revenue cases", summary.openRevenueCases],
+        ["High priority", summary.highPriorityRevenueCases],
+        ["Amount at risk", "$" + summary.amountAtRisk.toLocaleString()],
         ["Readiness gaps", summary.openControls],
         ["Live APIs", summary.liveIntegrations],
         ["Pipeline", "$" + summary.pipelineRevenue.toLocaleString()]
@@ -747,6 +943,11 @@ function renderCrmPage(): string {
       if (state.tab === "enterprise") {
         return '<table><thead><tr><th>Control</th><th>Category</th><th>Priority</th><th>Status</th></tr></thead><tbody>' +
           rows.map((item) => '<tr data-id="' + item.id + '"><td><strong>' + escapeHtml(item.title) + '</strong><br><small>' + escapeHtml(item.notes) + '</small></td><td>' + escapeHtml(item.category) + '</td><td>' + escapeHtml(item.priority) + '</td><td><span class="pill">' + escapeHtml(item.status) + '</span></td></tr>').join("") +
+          '</tbody></table>';
+      }
+      if (state.tab === "revenue") {
+        return '<table><thead><tr><th>Case</th><th>Status</th><th>Priority</th><th>Due</th><th class="right">At risk</th></tr></thead><tbody>' +
+          rows.map((item) => '<tr data-id="' + item.id + '"><td><strong>' + escapeHtml(item.caseType) + '</strong><br><small>' + escapeHtml(patientName(item.patientId)) + ' | ' + escapeHtml(item.payerOrProcessor || "No payer/processor") + '</small></td><td><span class="pill">' + escapeHtml(item.status) + '</span><br><small>' + escapeHtml(item.outcome) + '</small></td><td>' + escapeHtml(item.priority) + '</td><td>' + escapeHtml(item.dueAt || item.openedAt || "No date") + '</td><td class="right">$' + Number(item.amountAtRisk).toLocaleString() + '</td></tr>').join("") +
           '</tbody></table>';
       }
       if (state.tab === "integrations") {
@@ -807,6 +1008,23 @@ function renderCrmPage(): string {
           text("owner", "Owner"),
           area("notes", "Notes")
         ]);
+      } else if (state.tab === "revenue") {
+        entryForm.innerHTML = fields([
+          select("caseType", "Case type", enums.revenueCaseTypes),
+          select("status", "Status", enums.revenueCaseStatuses),
+          select("priority", "Priority", enums.revenueCasePriorities),
+          select("patientId", "Patient / inquiry", [["", "Unassigned"]].concat(state.data.state.prospectivePatients.map((item) => [item.id, item.displayName]))),
+          text("payerOrProcessor", "Payer or processor"),
+          text("transactionReference", "Transaction / claim reference"),
+          number("amountAtRisk", "Amount at risk"),
+          text("openedAt", "Opened date"),
+          text("dueAt", "Due date"),
+          text("owner", "Owner"),
+          area("evidenceNeeded", "Evidence needed"),
+          area("nextAction", "Next action"),
+          select("outcome", "Outcome", enums.revenueCaseOutcomes),
+          area("notes", "Notes")
+        ]);
       } else if (state.tab === "integrations") {
         entryForm.innerHTML = fields([
           text("name", "Integration name"),
@@ -855,25 +1073,35 @@ function renderCrmPage(): string {
       if (state.tab === "patients") return data.prospectivePatients;
       if (state.tab === "sources") return data.referralSources;
       if (state.tab === "activities") return data.activities;
+      if (state.tab === "revenue") return data.revenueCases;
       if (state.tab === "enterprise") return data.enterpriseControls;
       if (state.tab === "integrations") return data.integrations;
       return data.campaigns;
     }
 
     function labelForTab() {
-      return { patients: "Prospective Patients", sources: "Referral Sources", activities: "Follow-Ups", campaigns: "Marketing Campaigns", enterprise: "Enterprise Readiness", integrations: "Data Integrations" }[state.tab];
+      return { patients: "Prospective Patients", sources: "Referral Sources", activities: "Follow-Ups", campaigns: "Marketing Campaigns", revenue: "Revenue Protection", enterprise: "Enterprise Readiness", integrations: "Data Integrations" }[state.tab];
     }
 
     function selectRow(id) {
       const item = getRows().find((row) => row.id === id);
       state.selected = item;
       if (!item) return;
-      detail.innerHTML = '<section><h2>' + escapeHtml(item.displayName || item.name || item.summary) + '</h2>' +
+      detail.innerHTML = '<section><h2>' + escapeHtml(item.displayName || item.name || item.summary || item.caseType) + '</h2>' +
         Object.entries(item).filter(([key]) => !["id", "createdAt", "updatedAt"].includes(key)).map(([key, value]) => '<p><strong>' + escapeHtml(labelize(key)) + ':</strong> ' + escapeHtml(String(value || "")) + '</p>').join("") +
         statusControls(item) + '</section>';
+      hydrateStatusControls(item);
     }
 
     function statusControls(item) {
+      if (state.tab === "revenue") {
+        return '<div class="stack"><h3>Update Case</h3>' +
+          select("quickRevenueStatus", "Status", enums.revenueCaseStatuses).replace('name="quickRevenueStatus"', 'id="quickRevenueStatus"') +
+          select("quickRevenueOutcome", "Outcome", enums.revenueCaseOutcomes).replace('name="quickRevenueOutcome"', 'id="quickRevenueOutcome"') +
+          '<label>Next action<textarea id="quickRevenueNextAction">' + escapeHtml(item.nextAction || "") + '</textarea></label>' +
+          '<label>Due date<input id="quickRevenueDueAt" value="' + escapeHtml(item.dueAt || "") + '"></label>' +
+          '<button onclick="updateSelectedRevenueCase()">Update case</button></div>';
+      }
       if (state.tab !== "patients") return "";
       return '<div class="stack"><h3>Update Pipeline</h3>' +
         select("quickInquiryStatus", "Inquiry status", enums.inquiryStatuses).replace('name="quickInquiryStatus"', 'id="quickInquiryStatus"') +
@@ -882,12 +1110,33 @@ function renderCrmPage(): string {
         '<button onclick="updateSelectedPatient()">Update status</button></div>';
     }
 
+    function hydrateStatusControls(item) {
+      if (state.tab === "patients") {
+        quickInquiryStatus.value = item.inquiryStatus;
+        quickInsuranceStatus.value = item.insuranceStatus;
+      }
+      if (state.tab === "revenue") {
+        quickRevenueStatus.value = item.status;
+        quickRevenueOutcome.value = item.outcome;
+      }
+    }
+
     async function updateSelectedPatient() {
       if (!state.selected) return;
       await submit("/api/prospective-patients/" + state.selected.id + "/status", "PATCH", {
         inquiryStatus: quickInquiryStatus.value,
         insuranceStatus: quickInsuranceStatus.value,
         nextFollowUpAt: quickNextFollowUpAt.value
+      });
+    }
+
+    async function updateSelectedRevenueCase() {
+      if (!state.selected) return;
+      await submit("/api/revenue-cases/" + state.selected.id + "/status", "PATCH", {
+        status: quickRevenueStatus.value,
+        outcome: quickRevenueOutcome.value,
+        nextAction: quickRevenueNextAction.value,
+        dueAt: quickRevenueDueAt.value
       });
     }
 
@@ -904,10 +1153,10 @@ function renderCrmPage(): string {
     entryForm.onsubmit = async (event) => {
       event.preventDefault();
       const body = Object.fromEntries(new FormData(entryForm).entries());
-      for (const key of ["estimatedMonthlyRevenue", "sentCount", "responseCount"]) {
+      for (const key of ["estimatedMonthlyRevenue", "sentCount", "responseCount", "amountAtRisk"]) {
         if (key in body) body[key] = Number(body[key] || 0);
       }
-      const url = { patients: "/api/prospective-patients", sources: "/api/referral-sources", activities: "/api/activities", campaigns: "/api/campaigns", enterprise: "/api/enterprise-controls", integrations: "/api/integrations" }[state.tab];
+      const url = { patients: "/api/prospective-patients", sources: "/api/referral-sources", activities: "/api/activities", campaigns: "/api/campaigns", revenue: "/api/revenue-cases", enterprise: "/api/enterprise-controls", integrations: "/api/integrations" }[state.tab];
       try { await submit(url, "POST", body); entryForm.reset(); } catch (error) { status.textContent = error.message; }
     };
 
@@ -919,6 +1168,7 @@ function renderCrmPage(): string {
     });
     search.oninput = renderTable;
     function sourceName(id) { const source = state.data.state.referralSources.find((item) => item.id === id); return source ? source.name : "No referral source"; }
+    function patientName(id) { const patient = state.data.state.prospectivePatients.find((item) => item.id === id); return patient ? patient.displayName : "No linked inquiry"; }
     function labelize(value) { return value.replace(/([A-Z])/g, " $1").replace(/^./, (char) => char.toUpperCase()); }
     function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char])); }
     load().catch((error) => { status.textContent = error.message; });
