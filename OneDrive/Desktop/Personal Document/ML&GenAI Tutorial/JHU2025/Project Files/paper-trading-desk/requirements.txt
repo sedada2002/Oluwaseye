@@ -1,0 +1,4 @@
+# Core replay and simulation need only the standard library.
+# requests is needed only for --judge http.
+requests>=2.31
+pytest>=8.0
