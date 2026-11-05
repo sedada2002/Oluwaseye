@@ -105,7 +105,7 @@ class MomentumStrategy:
                              "momentum": m.to_numpy()}).reset_index(drop=True)
 
 
-def with_core(s: GrowthStrategy | MomentumStrategy) -> GrowthStrategy | MomentumStrategy:
+def with_core(s: "AnyStrategy") -> "AnyStrategy":
     """Same picks, but idle cash sits in SPY instead of earning nothing (core-satellite)."""
     return replace(s, name=f"{s.name}_core", label=f"{s.label} + idle cash in SPY",
                    idle_cash_in_benchmark=True)
@@ -156,14 +156,15 @@ class GrowthMomentumStrategy:
 AnyStrategy = GrowthStrategy | MomentumStrategy | GrowthMomentumStrategy
 
 
-def library() -> list[GrowthStrategy | MomentumStrategy]:
+def library() -> list["AnyStrategy"]:
     """The pre-registered tournament field. Do not add to it after seeing results."""
     g, m = GrowthStrategy(), MomentumStrategy()
     return [g, with_core(g), m, with_core(m)]
 
 
 def by_name(name: str) -> AnyStrategy:
-    extras: list[AnyStrategy] = [GrowthMomentumStrategy()]
+    gm = GrowthMomentumStrategy()
+    extras: list[AnyStrategy] = [gm, with_core(gm)]
     for s in [*library(), *extras]:
         if s.name == name:
             return s

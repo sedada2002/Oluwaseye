@@ -44,3 +44,20 @@ def test_cli_writes_outputs(tmp_path: Path) -> None:
     md = (tmp_path / "screen.md").read_text()
     assert "not investment advice" in md
     assert (tmp_path / "screen.csv").exists()
+
+
+def test_core_variant_keeps_spy_as_cash_sleeve(tmp_path: Path) -> None:
+    import json as _json
+
+    from quantflow.broker import load_positions_file
+    from quantflow.signals import generate
+
+    s = by_name("growth_momentum_core")
+    assert s.idle_cash_in_benchmark and s.label.endswith("idle cash in SPY")
+    f = tmp_path / "p.json"
+    f.write_text(_json.dumps({"equity": 100_000, "cash": 20_000, "holdings": [
+        {"ticker": "SPY", "qty": 100, "entry_date": "2024-01-02", "entry_price": 400, "initial_qty": 100}]}))
+    sig = generate(SyntheticProvider(), "growth_momentum_core", load_positions_file(f, None, None),
+                   asof="2024-05-31", rebalance="yes")
+    assert not [h for h in sig["holdings"] if h["ticker"] == "SPY"]   # type: ignore[union-attr,index]
+    assert any("Cash sleeve" in n for n in sig["notes"])               # type: ignore[union-attr]
