@@ -71,6 +71,33 @@ runs take seconds. Delete `.cache/` to refresh.
 Outputs: the HTML report, `*.trades.csv` (every round trip), `*.screens.csv` (every
 screen pass with CAGR, D/E, RS).
 
+### Strategy tournament (picks the strategy, honestly)
+
+```bash
+quantflow-tournament --source free --out-dir reports/tournament
+```
+
+Runs growth, growth + idle cash in SPY, 12-1 momentum, momentum + idle cash in SPY,
+and SPY 200-day trend. The winner is chosen on 2016-09 to 2022-12 by a fixed rule
+(beat SPY's Sharpe, drawdown within 10 points of SPY's) and must then beat SPY again on
+2023-01 to 2026-10, years it never saw. If nothing survives, the answer is SPY.
+
+### Daily signals ("buy X today, your stop on Y is now $Z")
+
+```bash
+quantflow-signals --strategy momentum_core                        # reads your Alpaca PAPER account
+quantflow-signals --strategy growth --positions positions.json    # or a hand-kept positions file
+```
+
+Same rules as the backtest: new buys only on the last trading day of the month (1% risk,
+3xATR stop, max 10% per name, 20 names); every day, trailing stops ratchet up, +20%
+sells half and moves the stop to break-even. Output: `signals.md` / `signals.json`.
+**It never places orders.**
+
+On GitHub, `.github/workflows/signals.yml` runs this every weekday after the close and
+posts the list on the run page. Scheduled runs only fire from the repo's default branch.
+Set the strategy with the repo variable `QUANTFLOW_STRATEGY`.
+
 ### API (key stays server-side)
 
 ```bash

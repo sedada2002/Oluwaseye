@@ -242,6 +242,7 @@ class EdgarFundamentals:
         session: requests.Session | None = None,
         max_rps: float = 8.0,
         limit: int | None = None,
+        facts_max_age_days: float | None = None,
     ) -> None:
         ua = user_agent or os.environ.get("SEC_USER_AGENT")
         if not ua or "@" not in ua:
@@ -258,6 +259,7 @@ class EdgarFundamentals:
         self._min_interval = 1.0 / max_rps
         self._last = 0.0
         self._limit = limit
+        self._facts_max_age = facts_max_age_days   # None = keep forever (backtests)
         self._ciks: dict[str, int] | None = None
 
     # -- public --------------------------------------------------------------------------
@@ -272,7 +274,10 @@ class EdgarFundamentals:
         for ticker, cik in self._ticker_map().items():
             # Cache the parsed rows, not the raw JSON (raw facts run to GBs across the market)
             parsed = self._cache / "facts" / f"{cik}.csv"
-            if parsed.exists():
+            fresh_enough = parsed.exists() and (
+                self._facts_max_age is None
+                or (time.time() - parsed.stat().st_mtime) / 86400 < self._facts_max_age)
+            if fresh_enough:
                 rows = pd.read_csv(parsed, parse_dates=["calendardate", "datekey"])
             else:
                 facts = self._json(FACTS_URL.format(cik=cik), None)

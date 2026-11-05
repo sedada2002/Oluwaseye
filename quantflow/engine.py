@@ -25,7 +25,7 @@ import pandas as pd
 from quantflow.config import BacktestConfig
 from quantflow.data.base import DataProvider
 from quantflow.indicators import atr_wide
-from quantflow.screen import fundamental_candidates, run_screen
+from quantflow.strategies import GrowthStrategy, Strategy
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -83,21 +83,26 @@ class PriceBook:
         return float(col[valid[-1]]) if len(valid) else float("nan")
 
 
-def run_backtest(provider: DataProvider, cfg: BacktestConfig | None = None) -> BacktestResult:
+def run_backtest(
+    provider: DataProvider,
+    cfg: BacktestConfig | None = None,
+    strategy: Strategy | None = None,
+) -> BacktestResult:
     cfg = cfg or BacktestConfig()
-    rc, sc = cfg.risk, cfg.screen
+    strat: Strategy = strategy or GrowthStrategy(screen=cfg.screen, name="growth", label="Growth screen")
+    rc = cfg.risk
     notes: list[str] = []
 
     universe = provider.universe()
     fund = provider.fundamentals()
     fund = fund[fund["ticker"].isin(universe["ticker"])]
-    candidates = fundamental_candidates(fund, sc)
+    candidates = strat.candidates(fund)
     sector_of = provider.sectors(candidates)
     notes.extend(getattr(provider, "caveats", []))
     notes.append(f"{len(candidates)} tickers pass the fundamental legs on at least one filing.")
 
     # Warm-up so ATR and RS lookbacks are populated on the first rebalance day
-    warmup_start = pd.Timestamp(cfg.start) - pd.tseries.offsets.BDay(sc.rs_lookback_days + 60)
+    warmup_start = pd.Timestamp(cfg.start) - pd.tseries.offsets.BDay(strat.warmup_days + 60)
     prices = provider.prices([*candidates, cfg.benchmark], warmup_start.strftime("%Y-%m-%d"), cfg.end)
     bench_px = prices[prices["ticker"] == cfg.benchmark].set_index("date")["close"].sort_index()
     if bench_px.empty:
@@ -151,8 +156,15 @@ def run_backtest(provider: DataProvider, cfg: BacktestConfig | None = None) -> B
     def mark(i: int) -> float:
         return cash + sum(p.shares * book.last_close(p.col, i) for p in positions.values())
 
+    bench_c = bench_px.to_numpy(dtype=np.float64)
+    first_row = int(sim_rows[0])
+    if strat.idle_cash_in_benchmark:
+        notes.append("Idle cash earns SPY's daily return (core-satellite); no costs modeled on that sleeve.")
+
     for i in (int(r) for r in sim_rows):
         day = calendar[i]
+        if strat.idle_cash_in_benchmark and i > first_row and cash > 0:
+            cash *= bench_c[i] / bench_c[i - 1]
 
         # 1. Fills at the open: queued exits first (frees cash), then entries
         for t in sorted(pending_exits):
@@ -222,7 +234,7 @@ def run_backtest(provider: DataProvider, cfg: BacktestConfig | None = None) -> B
 
         # 4. Rebalance: screen on today's close, act at tomorrow's open
         if i in rebalance_rows:
-            picks = run_screen(fund, book.close_df, bench_px, day, sc)
+            picks = strat.select(fund, book.close_df, bench_px, day)
             if not picks.empty:
                 screen_rows.append(picks.assign(date=day))
             passing = set(picks["ticker"])

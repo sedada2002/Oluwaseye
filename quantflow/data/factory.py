@@ -14,7 +14,8 @@ class ProviderConfigError(RuntimeError):
     pass
 
 
-def make_provider(source: Source) -> DataProvider:
+def make_provider(source: Source, fresh: bool = False) -> DataProvider:
+    """fresh=True (live signals): refresh fundamentals weekly instead of caching forever."""
     if source == "synthetic":
         from quantflow.data.fixtures import SyntheticProvider
 
@@ -23,16 +24,16 @@ def make_provider(source: Source) -> DataProvider:
         from quantflow.data.sharadar import SharadarError, SharadarProvider
 
         try:
-            return SharadarProvider()
+            return SharadarProvider(max_age_days=1 if fresh else None)
         except SharadarError as e:
             raise ProviderConfigError(str(e)) from e
     if source == "free":
         from quantflow.data.alpaca import AlpacaError
-        from quantflow.data.edgar import EdgarError
+        from quantflow.data.edgar import EdgarError, EdgarFundamentals
         from quantflow.data.free import FreeProvider
 
         try:
-            return FreeProvider()
+            return FreeProvider(EdgarFundamentals(facts_max_age_days=7 if fresh else None))
         except (EdgarError, AlpacaError) as e:
             raise ProviderConfigError(str(e)) from e
     raise ProviderConfigError(f"Unknown data source {source!r}; choose from {SOURCES}")

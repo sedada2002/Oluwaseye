@@ -1,0 +1,79 @@
+# Daily QuantFlow signals: "buy X", "raise your stop on Y to $Z", "sell half of W".
+# Reads the Alpaca PAPER account with your repo secrets. Never places orders.
+#
+# GitHub only runs scheduled workflows from the repository's DEFAULT branch.
+# Until `quantflow` is the default branch, run this from the Actions tab (Run workflow).
+name: QuantFlow daily signals
+
+on:
+  schedule:
+    # 22:13 UTC on weekdays = 5:13 pm New York in winter, 6:13 pm in summer (after the close)
+    - cron: "13 22 * * 1-5"
+  push:
+    branches: [quantflow]
+    paths: [".github/workflows/signals.yml", "quantflow/signals.py", "quantflow/broker.py"]
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: "growth | growth_core | momentum | momentum_core | spy_trend | spy"
+        default: ""
+      rebalance:
+        description: "auto = only on the last trading day of the month"
+        type: choice
+        options: [auto, "yes", "no"]
+        default: auto
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signals
+  cancel-in-progress: false
+
+jobs:
+  signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Adopted strategy: set the repo variable QUANTFLOW_STRATEGY to switch without code changes
+      STRATEGY: ${{ inputs.strategy || vars.QUANTFLOW_STRATEGY || 'spy' }}
+      REBALANCE: ${{ inputs.rebalance || 'auto' }}
+      QUANTFLOW_CACHE_DIR: .cache
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+      APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+      ALPACA_DATA_FEED: ${{ vars.ALPACA_DATA_FEED || 'sip' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: pip install -e .
+      - name: Restore data cache
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: signals-${{ github.run_id }}
+          restore-keys: |
+            signals-
+            data-free-
+      - name: Generate signals
+        run: quantflow-signals --strategy "$STRATEGY" --rebalance "$REBALANCE" --out-dir reports/signals
+      - name: Post to run page
+        if: always()
+        run: |
+          if [ -f reports/signals/signals.md ]; then
+            cat reports/signals/signals.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Signals failed - see the Generate signals step log" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signals
+          path: reports/signals/
+          if-no-files-found: warn
+          retention-days: 90

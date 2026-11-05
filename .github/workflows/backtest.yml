@@ -11,10 +11,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "compare = 4 variants side by side; single = one run with extra_args"
+        description: "tournament = all strategies with holdout; compare = growth variants; single = one run"
         type: choice
-        options: [compare, single]
-        default: compare
+        options: [tournament, compare, single]
+        default: tournament
       source:
         description: "Data source"
         type: choice
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      MODE: ${{ inputs.mode || 'compare' }}
+      MODE: ${{ inputs.mode || 'tournament' }}
       SOURCE: ${{ inputs.source || 'free' }}
       START: ${{ inputs.start || '2016-09-01' }}
       END: ${{ inputs.end || '2026-10-31' }}
@@ -90,7 +90,9 @@ jobs:
       - name: Backtest
         run: |
           mkdir -p reports
-          if [ "$MODE" = "compare" ]; then
+          if [ "$MODE" = "tournament" ]; then
+            quantflow-tournament --source "$SOURCE" --out-dir reports
+          elif [ "$MODE" = "compare" ]; then
             quantflow-compare --source "$SOURCE" --start "$START" --end "$END" --out-dir reports
           else
             # shellcheck disable=SC2086
@@ -101,8 +103,10 @@ jobs:
       - name: Write run summary
         if: always()
         run: |
-          if [ -f reports/compare.md ]; then
-            cat reports/compare.md >> "$GITHUB_STEP_SUMMARY"
+          for f in reports/tournament.md reports/compare.md; do
+            if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+          if [ -f reports/tournament.md ] || [ -f reports/compare.md ]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Full reports: download the **quantflow-report** artifact below." >> "$GITHUB_STEP_SUMMARY"
             exit 0

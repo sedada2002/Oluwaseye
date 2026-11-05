@@ -68,8 +68,10 @@ class MemoProvider:
         want = set(tickers)
         if self._prices is not None and self._price_key is not None:
             have, s0, e0 = self._price_key
-            if want <= have and s0 == start and e0 == end:
-                return self._prices[self._prices["ticker"].isin(want)].copy()
+            if want <= have and s0 <= start and end <= e0:
+                px = self._prices
+                mask = px["ticker"].isin(want) & px["date"].between(pd.Timestamp(start), pd.Timestamp(end))
+                return px[mask].copy()
         self._prices = self._inner.prices(sorted(want), start, end)
         self._price_key = (want, start, end)
         return self._prices.copy()

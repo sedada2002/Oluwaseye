@@ -50,6 +50,7 @@ class SharadarProvider:
         cache_dir: str | os.PathLike[str] | None = None,
         session: requests.Session | None = None,
         max_retries: int = 4,
+        max_age_days: float | None = None,
     ) -> None:
         key = api_key or os.environ.get("NASDAQ_DATA_LINK_API_KEY")
         if not key:
@@ -60,6 +61,7 @@ class SharadarProvider:
         self._key = key
         self._session = session or requests.Session()
         self._max_retries = max_retries
+        self._max_age = max_age_days
         cache = cache_dir or os.environ.get("QUANTFLOW_CACHE_DIR", ".cache/sharadar")
         self._cache = Path(cache)
         self._cache.mkdir(parents=True, exist_ok=True)
@@ -118,7 +120,9 @@ class SharadarProvider:
 
     def _table(self, table: str, params: dict[str, str]) -> pd.DataFrame:
         cache_file = self._cache_path(table, params)
-        if cache_file.exists():
+        if cache_file.exists() and (
+            self._max_age is None or (time.time() - cache_file.stat().st_mtime) / 86400 < self._max_age
+        ):
             return pd.read_csv(cache_file, compression="gzip")
 
         rows: list[list[Any]] = []
