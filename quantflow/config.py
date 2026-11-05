@@ -13,6 +13,7 @@ class ScreenConfig:
     rs_lookback_days: int = 126         # ~6 months of trading days
     min_rs_excess: float = 0.0          # must beat SPY over the lookback
     max_staleness_days: int = 200       # ignore filings older than this (company stopped reporting)
+    min_revenue: float = 0.0            # TTM revenue floor in USD (e.g. 500e6 drops small biotechs)
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class RiskConfig:
     breakeven_after_partial: bool = True
     max_positions: int = 20
     max_position_weight: float = 0.10   # cap notional per position at 10% of equity
+    max_sector_weight: float = 1.0      # cap one sector's notional at this share of equity (1.0 = off)
     slippage_bps: float = 5.0           # applied on every fill
     commission_per_share: float = 0.0
 

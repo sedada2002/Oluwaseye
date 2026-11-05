@@ -172,6 +172,12 @@ def run_backtest(provider: DataProvider, cfg: BacktestConfig | None = None) -> B
             shares = math.floor(rc.risk_per_trade * prev_equity / stop_dist)
             shares = min(shares, math.floor(rc.max_position_weight * prev_equity / fill))
             shares = min(shares, math.floor(cash / (fill + rc.commission_per_share)))
+            if rc.max_sector_weight < 1.0:
+                sector = sector_of.get(t, "Unknown")
+                in_sector = sum(p.shares * book.last_close(p.col, i - 1) for p in positions.values()
+                                if sector_of.get(p.ticker, "Unknown") == sector)
+                room = rc.max_sector_weight * prev_equity - in_sector
+                shares = min(shares, math.floor(max(room, 0.0) / fill))
             if shares <= 0:
                 continue
             cost = shares * (fill + rc.commission_per_share)
@@ -222,17 +228,15 @@ def run_backtest(provider: DataProvider, cfg: BacktestConfig | None = None) -> B
             passing = set(picks["ticker"])
             if cfg.exit_on_screen_fail:
                 pending_exits = {t for t in positions if t not in passing}
-            slots = rc.max_positions - len(positions) + len(pending_exits)
-            for t in picks["ticker"]:
-                if slots <= 0:
-                    break
-                if t in positions and t not in pending_exits:
-                    continue
-                a = float(book.atr[i, book.col[t]])
-                if math.isnan(a):
-                    continue
-                pending_entries.append((t, a))
-                slots -= 1
+            # Queue every pick in rank order. The fill loop stops at max_positions, so if a
+            # name can't be bought (no open, no cash, sector cap) the next-ranked one gets the slot.
+            if len(positions) - len(pending_exits) < rc.max_positions:
+                for t in picks["ticker"]:
+                    if t in positions and t not in pending_exits:
+                        continue
+                    a = float(book.atr[i, book.col[t]])
+                    if not math.isnan(a):
+                        pending_entries.append((t, a))
             for t, pos in positions.items():
                 value = pos.shares * book.last_close(pos.col, i)
                 holding_rows.append({"date": day, "ticker": t, "sector": sector_of.get(t, "Unknown"),

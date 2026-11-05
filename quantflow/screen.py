@@ -43,7 +43,12 @@ def fundamental_candidates(fund: pd.DataFrame, cfg: ScreenConfig) -> list[str]:
     every name the screen could ever pick, used to limit price downloads."""
     f = _with_base(fund, cfg.cagr_years)
     f["cagr"] = _cagr(f["revenue"], f["base_revenue"], cfg.cagr_years)
-    ok = (f["cagr"] > cfg.min_revenue_cagr) & (f["de"] < cfg.max_debt_to_equity) & (f["de"] >= 0)
+    ok = (
+        (f["cagr"] > cfg.min_revenue_cagr)
+        & (f["de"] < cfg.max_debt_to_equity)
+        & (f["de"] >= 0)
+        & (f["revenue"] >= cfg.min_revenue)
+    )
     return sorted(f.loc[ok, "ticker"].unique().tolist())
 
 
@@ -51,7 +56,7 @@ def fundamental_snapshot(fund: pd.DataFrame, asof: pd.Timestamp, cfg: ScreenConf
     """Latest visible fundamentals per ticker as of `asof`, with point-in-time CAGR."""
     visible = fund[fund["datekey"] <= asof]
     if visible.empty:
-        return pd.DataFrame(columns=["ticker", "revenue_cagr", "de", "datekey"])
+        return pd.DataFrame(columns=["ticker", "revenue", "revenue_cagr", "de", "datekey"])
     latest = (
         visible.sort_values(["calendardate", "datekey"])
         .groupby("ticker", as_index=False)
@@ -71,7 +76,7 @@ def fundamental_snapshot(fund: pd.DataFrame, asof: pd.Timestamp, cfg: ScreenConf
     )
     f = f.merge(base, on=["ticker", "base_q"], how="left")
     f["revenue_cagr"] = _cagr(f["revenue"], f["base_revenue"], cfg.cagr_years)
-    out: pd.DataFrame = f[["ticker", "revenue_cagr", "de", "datekey"]].reset_index(drop=True)
+    out: pd.DataFrame = f[["ticker", "revenue", "revenue_cagr", "de", "datekey"]].reset_index(drop=True)
     return out
 
 
@@ -104,6 +109,7 @@ def run_screen(
     snap = fundamental_snapshot(fund, asof, cfg)
     snap = snap[
         (snap["revenue_cagr"] > cfg.min_revenue_cagr)
+        & (snap["revenue"] >= cfg.min_revenue)
         & (snap["de"] >= 0)
         & (snap["de"] < cfg.max_debt_to_equity)
     ]

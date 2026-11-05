@@ -171,7 +171,7 @@ def render_html(
     sec_table = "".join(
         f"<tr><td>{n}</td><td>{_fmt(sec.get(key, float('nan')), k)}</td></tr>"
         for n, key, k in [("Avg positions held", "avg_positions", "num"),
-                          ("Avg share in top sector", "avg_top_sector_share", "pct"),
+                          ("Top sector, % of invested", "avg_top_sector_share", "pct"),
                           ("Worst month top-sector share", "max_top_sector_share", "pct"),
                           ("Avg HHI (1.0 = one sector)", "avg_hhi", "num"),
                           ("Most frequent top sector", "most_common_top_sector", "str")]

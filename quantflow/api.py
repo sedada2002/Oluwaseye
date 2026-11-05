@@ -33,6 +33,8 @@ class BacktestRequest(BaseModel):
     atr_multiplier: float = Field(3.0, gt=0)
     rs_lookback_days: int = Field(126, ge=20, le=504)
     exit_on_screen_fail: bool = False
+    min_revenue: float = Field(0.0, ge=0)
+    max_sector_weight: float = Field(1.0, gt=0, le=1)
     source: Source = "free"
 
 
@@ -47,8 +49,9 @@ def _config(req: BacktestRequest) -> BacktestConfig:
     return BacktestConfig(
         start=req.start, end=req.end, initial_equity=req.initial_equity,
         exit_on_screen_fail=req.exit_on_screen_fail,
-        screen=replace(ScreenConfig(), rs_lookback_days=req.rs_lookback_days),
-        risk=replace(RiskConfig(), max_positions=req.max_positions, atr_multiplier=req.atr_multiplier),
+        screen=replace(ScreenConfig(), rs_lookback_days=req.rs_lookback_days, min_revenue=req.min_revenue),
+        risk=replace(RiskConfig(), max_positions=req.max_positions, atr_multiplier=req.atr_multiplier,
+                     max_sector_weight=req.max_sector_weight),
     )
 
 

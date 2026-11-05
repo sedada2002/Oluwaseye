@@ -10,6 +10,11 @@ on:
       - "quantflow/**"
   workflow_dispatch:
     inputs:
+      mode:
+        description: "compare = 4 variants side by side; single = one run with extra_args"
+        type: choice
+        options: [compare, single]
+        default: compare
       source:
         description: "Data source"
         type: choice
@@ -37,6 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
+      MODE: ${{ inputs.mode || 'compare' }}
       SOURCE: ${{ inputs.source || 'free' }}
       START: ${{ inputs.start || '2016-09-01' }}
       END: ${{ inputs.end || '2026-10-31' }}
@@ -84,13 +90,23 @@ jobs:
       - name: Backtest
         run: |
           mkdir -p reports
-          # shellcheck disable=SC2086
-          quantflow --source "$SOURCE" --start "$START" --end "$END" $EXTRA_ARGS \
-            --out "reports/quantflow_${SOURCE}.html" | tee reports/summary.json
+          if [ "$MODE" = "compare" ]; then
+            quantflow-compare --source "$SOURCE" --start "$START" --end "$END" --out-dir reports
+          else
+            # shellcheck disable=SC2086
+            quantflow --source "$SOURCE" --start "$START" --end "$END" $EXTRA_ARGS \
+              --out "reports/quantflow_${SOURCE}.html" | tee reports/summary.json
+          fi
 
       - name: Write run summary
         if: always()
         run: |
+          if [ -f reports/compare.md ]; then
+            cat reports/compare.md >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Full reports: download the **quantflow-report** artifact below." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
           import json, pathlib
           p = pathlib.Path("reports/summary.json")

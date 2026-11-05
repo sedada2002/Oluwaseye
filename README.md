@@ -57,6 +57,13 @@ quantflow --source free --start 2016-09-01 --out reports/free.html       # $0 go
 quantflow --source sharadar --start 2012-01-01 --out reports/sharadar.html
 ```
 
+Compare variants on the same data (loaded once):
+
+```bash
+quantflow-compare --source free --out-dir reports/compare   # current, $500M floor, 30% sector cap, both
+quantflow --source free --min-revenue 500e6 --max-sector-weight 0.3 --out reports/tuned.html
+```
+
 First free run: about 6,000 SEC requests at 8 per second (roughly 15 minutes), then
 Alpaca prices for the candidates. Parsed results are cached under `.cache/`, so later
 runs take seconds. Delete `.cache/` to refresh.

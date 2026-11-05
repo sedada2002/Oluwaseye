@@ -43,6 +43,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--atr-mult", type=float, default=RiskConfig.atr_multiplier)
     p.add_argument("--rs-lookback", type=int, default=ScreenConfig.rs_lookback_days)
     p.add_argument("--exit-on-screen-fail", action="store_true")
+    p.add_argument("--min-revenue", type=float, default=ScreenConfig.min_revenue,
+                   help="TTM revenue floor in USD, e.g. 500e6")
+    p.add_argument("--max-sector-weight", type=float, default=RiskConfig.max_sector_weight,
+                   help="max share of equity in one sector, e.g. 0.3 (1.0 = no cap)")
     p.add_argument("--source", choices=SOURCES, default="free",
                    help="free = SEC EDGAR + Alpaca; sharadar = paid; synthetic = fake data")
     p.add_argument("--synthetic", action="store_true", help="shorthand for --source synthetic")
@@ -52,8 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     cfg = BacktestConfig(
         start=args.start, end=args.end, initial_equity=args.equity,
         exit_on_screen_fail=args.exit_on_screen_fail,
-        screen=replace(ScreenConfig(), rs_lookback_days=args.rs_lookback),
-        risk=replace(RiskConfig(), max_positions=args.max_positions, atr_multiplier=args.atr_mult),
+        screen=replace(ScreenConfig(), rs_lookback_days=args.rs_lookback, min_revenue=args.min_revenue),
+        risk=replace(RiskConfig(), max_positions=args.max_positions, atr_multiplier=args.atr_mult,
+                     max_sector_weight=args.max_sector_weight),
     )
 
     source: Source = "synthetic" if args.synthetic else args.source

@@ -19,6 +19,7 @@ dev = ["pytest>=8", "mypy>=1.9", "pandas-stubs", "types-requests", "httpx"]
 
 [project.scripts]
 quantflow = "quantflow.cli:main"
+quantflow-compare = "quantflow.compare:main"
 
 [tool.setuptools.packages.find]
 include = ["quantflow*"]
