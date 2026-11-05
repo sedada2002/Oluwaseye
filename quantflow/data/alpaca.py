@@ -47,6 +47,16 @@ def bars_to_frame(payload_bars: dict[str, list[dict[str, Any]]]) -> pd.DataFrame
     return df
 
 
+def recent_safe_end(end: str, now: pd.Timestamp | None = None) -> str:
+    """Free Alpaca plans refuse SIP data from the last 15 minutes (HTTP 403). If the
+    request reaches today, end it 16 minutes ago instead. Historical ends pass through."""
+    now = now or pd.Timestamp.now(tz="UTC")
+    cutoff = now - pd.Timedelta(minutes=16)
+    if pd.Timestamp(end).tz_localize("America/New_York").tz_convert("UTC") + pd.Timedelta(days=1) <= cutoff:
+        return end
+    return cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class AlpacaPrices:
     def __init__(
         self,
@@ -69,6 +79,7 @@ class AlpacaPrices:
 
     def prices(self, tickers: Sequence[str], start: str, end: str) -> pd.DataFrame:
         start = max(start, EARLIEST)
+        end = recent_safe_end(end)
         symbols = sorted({t.replace("-", ".") for t in tickers})   # Alpaca uses BRK.B
         frames: list[pd.DataFrame] = []
         for i in range(0, len(symbols), SYMBOL_BATCH):
@@ -107,8 +118,8 @@ class AlpacaPrices:
                 continue
             if resp.status_code in (401, 403):
                 raise AlpacaError(
-                    f"Alpaca refused the request ({resp.status_code}). Check the keys; if the "
-                    "message mentions the SIP feed, set ALPACA_DATA_FEED=iex."
+                    f"Alpaca refused the request ({resp.status_code}: {resp.text[:200]}). Check the "
+                    "keys; if the message mentions the SIP feed, set ALPACA_DATA_FEED=iex."
                 )
             if not resp.ok:
                 raise AlpacaError(f"Alpaca error {resp.status_code}: {resp.text[:200]}")

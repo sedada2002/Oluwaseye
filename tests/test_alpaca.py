@@ -76,3 +76,12 @@ def test_missing_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("APCA_API_SECRET_KEY", raising=False)
     with pytest.raises(AlpacaError, match="APCA_API_KEY_ID"):
         AlpacaPrices(cache_dir=tmp_path)
+
+
+def test_recent_end_is_pulled_back_15_minutes() -> None:
+    from quantflow.data.alpaca import recent_safe_end
+
+    now = pd.Timestamp("2026-11-05T22:13:00Z")
+    assert recent_safe_end("2026-10-30", now) == "2026-10-30"           # history untouched
+    assert recent_safe_end("2026-11-05", now) == "2026-11-05T21:57:00Z"  # today -> now - 16 min
+    assert recent_safe_end("2026-11-06", now) == "2026-11-05T21:57:00Z"  # future -> now - 16 min
