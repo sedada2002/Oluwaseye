@@ -1,0 +1,121 @@
+# Runs the QuantFlow backtest on GitHub's servers using repository secrets.
+# Keys never appear in the repo: they come from Settings > Secrets and variables > Actions.
+name: QuantFlow backtest
+
+on:
+  push:
+    branches: [quantflow]
+    paths:
+      - ".github/workflows/backtest.yml"
+      - "quantflow/**"
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Data source"
+        type: choice
+        options: [free, synthetic, sharadar]
+        default: free
+      start:
+        description: "Start date (free data can't start before 2016-09-01)"
+        default: "2016-09-01"
+      end:
+        description: "End date"
+        default: "2026-10-31"
+      extra_args:
+        description: "Extra CLI flags, e.g. --atr-mult 2.5 --max-positions 15"
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backtest-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SOURCE: ${{ inputs.source || 'free' }}
+      START: ${{ inputs.start || '2016-09-01' }}
+      END: ${{ inputs.end || '2026-10-31' }}
+      EXTRA_ARGS: ${{ inputs.extra_args || '' }}
+      QUANTFLOW_CACHE_DIR: .cache
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+      APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+      ALPACA_DATA_FEED: ${{ vars.ALPACA_DATA_FEED || 'sip' }}
+      NASDAQ_DATA_LINK_API_KEY: ${{ secrets.NASDAQ_DATA_LINK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Tests
+        run: pytest -q
+
+      # Downloaded data persists between runs, so only the first run is slow (~15-20 min)
+      - name: Restore data cache
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: data-${{ env.SOURCE }}-${{ github.run_id }}
+          restore-keys: data-${{ env.SOURCE }}-
+
+      - name: Check secrets are present
+        if: env.SOURCE == 'free'
+        run: |
+          missing=""
+          [ -z "$SEC_USER_AGENT" ] && missing="$missing SEC_USER_AGENT"
+          [ -z "$APCA_API_KEY_ID" ] && missing="$missing APCA_API_KEY_ID"
+          [ -z "$APCA_API_SECRET_KEY" ] && missing="$missing APCA_API_SECRET_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            exit 1
+          fi
+
+      - name: Backtest
+        run: |
+          mkdir -p reports
+          # shellcheck disable=SC2086
+          quantflow --source "$SOURCE" --start "$START" --end "$END" $EXTRA_ARGS \
+            --out "reports/quantflow_${SOURCE}.html" | tee reports/summary.json
+
+      - name: Write run summary
+        if: always()
+        run: |
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json, pathlib
+          p = pathlib.Path("reports/summary.json")
+          if not p.exists() or not p.read_text().strip():
+              print("## Backtest did not produce a summary - check the Backtest step log")
+              raise SystemExit
+          d = json.loads(p.read_text())
+          s, b, t = d["strategy"], d["benchmark"], d["trades"]
+          pct = lambda v: "n/a" if v != v else f"{v:.1%}"
+          num = lambda v: "n/a" if v != v else f"{v:.2f}"
+          print("## QuantFlow vs SPY\n")
+          print("| | Strategy | SPY |\n|---|---|---|")
+          print(f"| CAGR | {pct(s['cagr'])} | {pct(b['cagr'])} |")
+          print(f"| Sharpe | {num(s['sharpe'])} | {num(b['sharpe'])} |")
+          print(f"| Max drawdown | {pct(s['max_drawdown'])} | {pct(b['max_drawdown'])} |")
+          print(f"| Volatility | {pct(s['volatility'])} | {pct(b['volatility'])} |")
+          print(f"\nTrades: {int(t['trades'])}, win rate {pct(t['win_rate'])}. "
+                "Full report: download the **quantflow-report** artifact below.")
+          EOF
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quantflow-report
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30
