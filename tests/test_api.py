@@ -1,6 +1,10 @@
-from fastapi.testclient import TestClient
+import pytest
 
-from quantflow.api import app
+pytest.importorskip("fastapi", reason="API extra not installed: pip install -e \".[api]\"")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from quantflow.api import app  # noqa: E402
 
 
 def test_backtest_endpoint_synthetic() -> None:
