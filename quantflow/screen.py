@@ -114,6 +114,9 @@ def run_screen(
         & (snap["de"] < cfg.max_debt_to_equity)
     ]
     rs = relative_strength(closes, benchmark, asof, cfg.rs_lookback_days).rename("rs_excess")
-    out = snap.merge(rs, left_on="ticker", right_index=True, how="inner")
+    if rs.empty or snap.empty:          # not enough price history yet, or nothing passes
+        return pd.DataFrame(columns=[*snap.columns, "rs_excess"])
+    rs_df = pd.DataFrame({"ticker": rs.index.astype(str), "rs_excess": rs.to_numpy(dtype=float)})
+    out = snap.merge(rs_df, on="ticker", how="inner")
     out = out[out["rs_excess"] > cfg.min_rs_excess]
     return out.sort_values("rs_excess", ascending=False).reset_index(drop=True)

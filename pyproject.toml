@@ -22,6 +22,7 @@ quantflow = "quantflow.cli:main"
 quantflow-compare = "quantflow.compare:main"
 quantflow-tournament = "quantflow.tournament:main"
 quantflow-signals = "quantflow.signals:main"
+quantflow-screen = "quantflow.screen_now:main"
 
 [tool.setuptools.packages.find]
 include = ["quantflow*"]

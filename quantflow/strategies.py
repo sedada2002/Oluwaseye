@@ -125,13 +125,47 @@ def spy_trend_equity(bench: pd.Series, start: str, end: str, ma: int = 200,
     return eq
 
 
+@dataclass(frozen=True)
+class GrowthMomentumStrategy:
+    """Stocks passing BOTH the growth screen and 12-1 momentum, ranked by momentum.
+    Added after the tournament at the user's request - it was not part of the
+    pre-registered selection, so its backtest is information, not a fair contest."""
+
+    name: str = "growth_momentum"
+    label: str = "Growth screen + 12-1 momentum"
+    idle_cash_in_benchmark: bool = False
+    growth: GrowthStrategy = field(default_factory=GrowthStrategy)
+    momentum: MomentumStrategy = field(default_factory=MomentumStrategy)
+    warmup_days: int = 252
+
+    def candidates(self, fund: pd.DataFrame) -> list[str]:
+        return self.growth.candidates(fund)
+
+    def select(self, fund: pd.DataFrame, closes: pd.DataFrame, bench: pd.Series,
+               asof: pd.Timestamp) -> pd.DataFrame:
+        g = self.growth.select(fund, closes, bench, asof)
+        m = self.momentum.select(fund, closes, bench, asof)
+        if g.empty or m.empty:
+            return pd.DataFrame(columns=[*g.columns, "momentum"])
+        both = g.drop(columns=["score"]).merge(m[["ticker", "momentum"]], on="ticker", how="inner")
+        both = both.assign(score=both["momentum"]).sort_values("score", ascending=False)
+        out: pd.DataFrame = both.reset_index(drop=True)
+        return out
+
+
+AnyStrategy = GrowthStrategy | MomentumStrategy | GrowthMomentumStrategy
+
+
 def library() -> list[GrowthStrategy | MomentumStrategy]:
+    """The pre-registered tournament field. Do not add to it after seeing results."""
     g, m = GrowthStrategy(), MomentumStrategy()
     return [g, with_core(g), m, with_core(m)]
 
 
-def by_name(name: str) -> GrowthStrategy | MomentumStrategy:
-    for s in library():
+def by_name(name: str) -> AnyStrategy:
+    extras: list[AnyStrategy] = [GrowthMomentumStrategy()]
+    for s in [*library(), *extras]:
         if s.name == name:
             return s
-    raise KeyError(f"Unknown strategy {name!r}; choose from {[s.name for s in library()]}")
+    raise KeyError(f"Unknown strategy {name!r}; choose from "
+                   f"{[s.name for s in [*library(), *extras]]}")
