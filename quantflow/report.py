@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from quantflow.data.factory import Source, source_line
 from quantflow.engine import BacktestResult
 from quantflow.metrics import (
     Performance,
@@ -130,7 +131,7 @@ def render_html(
     result: BacktestResult,
     data: ReportData | None = None,
     title: str = "QuantFlow vs SPY",
-    synthetic: bool = False,
+    source: "Source" = "sharadar",
 ) -> str:
     d = data or summarize(result)
     s, b = d.strategy, d.benchmark
@@ -178,12 +179,11 @@ def render_html(
     eq_chart = _line_chart({"Strategy": result.equity, bench: result.benchmark}, log=True)
     dd_chart = _line_chart({"Strategy": drawdown(result.equity), bench: drawdown(result.benchmark)},
                            height=200, pct=True)
-    source_line = (
-        "<b>SYNTHETIC DATA - mechanics check only, these numbers say nothing about the strategy.</b>"
-        if synthetic else '<a href="http://www.sharadar.com">Data from Sharadar</a>.'
-    )
-    if synthetic:
+    footer = source_line(source)
+    if source == "synthetic":
         title = f"[SYNTHETIC] {title}"
+    elif source == "free":
+        title = f"{title} (free data)"
     verdict = "".join(f"<li>{html.escape(v)}</li>" for v in d.verdict)
     notes = "".join(f"<li>{html.escape(n)}</li>" for n in result.notes)
     rc, sc = cfg.risk, cfg.screen
@@ -244,5 +244,5 @@ td:first-child,th:first-child{{text-align:left;color:var(--muted)}}
 <h2>Average sector share of invested capital</h2>
 <div class="card">{_bars(d.sector_avg) if not d.sector_avg.empty else "No holdings."}</div>
 <h2>Caveats</h2><div class="card foot"><ul>{notes}</ul></div>
-<p class="foot">{source_line} Backtested results are hypothetical and not investment advice.</p>
+<p class="foot">{footer} Backtested results are hypothetical and not investment advice.</p>
 </main></body></html>"""

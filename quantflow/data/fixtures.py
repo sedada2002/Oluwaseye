@@ -11,7 +11,12 @@ from typing import Sequence
 import numpy as np
 import pandas as pd
 
-from quantflow.data.base import FUNDAMENTAL_COLUMNS, PRICE_COLUMNS, UNIVERSE_COLUMNS
+from quantflow.data.base import (
+    FUNDAMENTAL_COLUMNS,
+    PRICE_COLUMNS,
+    UNIVERSE_COLUMNS,
+    sectors_from_universe,
+)
 
 SECTORS = ["Technology", "Healthcare", "Industrials", "Consumer Cyclical", "Energy"]
 
@@ -102,6 +107,9 @@ class SyntheticProvider:
 
     def fundamentals(self) -> pd.DataFrame:
         return self._cache["fundamentals"].copy()
+
+    def sectors(self, tickers: Sequence[str]) -> dict[str, str]:
+        return sectors_from_universe(self.universe(), tickers)
 
     def prices(self, tickers: Sequence[str], start: str, end: str) -> pd.DataFrame:
         p = self._cache["prices"]

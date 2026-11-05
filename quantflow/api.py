@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from quantflow.config import BacktestConfig, RiskConfig, ScreenConfig
 from quantflow.data.base import DataProvider
+from quantflow.data.factory import ProviderConfigError, Source, make_provider
 from quantflow.engine import run_backtest
 from quantflow.report import render_html, summarize
 
@@ -32,19 +33,13 @@ class BacktestRequest(BaseModel):
     atr_multiplier: float = Field(3.0, gt=0)
     rs_lookback_days: int = Field(126, ge=20, le=504)
     exit_on_screen_fail: bool = False
-    synthetic: bool = False
+    source: Source = "free"
 
 
-def _provider(synthetic: bool) -> DataProvider:
-    if synthetic:
-        from quantflow.data.fixtures import SyntheticProvider
-
-        return SyntheticProvider()
-    from quantflow.data.sharadar import SharadarError, SharadarProvider
-
+def _provider(source: Source) -> DataProvider:
     try:
-        return SharadarProvider()
-    except SharadarError as e:
+        return make_provider(source)
+    except ProviderConfigError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
 
@@ -63,10 +58,10 @@ def _series_json(s: "pd.Series") -> dict[str, float]:
 
 @app.post("/backtest")
 def backtest(req: BacktestRequest) -> dict[str, Any]:
-    result = run_backtest(_provider(req.synthetic), _config(req))
+    result = run_backtest(_provider(req.source), _config(req))
     d = summarize(result)
     return {
-        "synthetic": req.synthetic,
+        "source": req.source,
         "strategy": d.strategy.as_dict(),
         "benchmark": d.benchmark.as_dict(),
         "relative": d.relative,
@@ -81,5 +76,5 @@ def backtest(req: BacktestRequest) -> dict[str, Any]:
 
 @app.post("/backtest/report", response_class=HTMLResponse)
 def backtest_report(req: BacktestRequest) -> str:
-    result = run_backtest(_provider(req.synthetic), _config(req))
-    return render_html(result, synthetic=req.synthetic)
+    result = run_backtest(_provider(req.source), _config(req))
+    return render_html(result, source=req.source)

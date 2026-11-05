@@ -12,6 +12,9 @@ prices(tickers): daily split-adjusted bars
 
 universe(): one row per ticker
     ticker, sector, isdelisted
+
+sectors(tickers): {ticker: sector} - only called for tickers that can pass the screen,
+    so providers where sector lookup is expensive (EDGAR) do it lazily.
 """
 
 from __future__ import annotations
@@ -31,6 +34,13 @@ class DataProvider(Protocol):
     def fundamentals(self) -> pd.DataFrame: ...
 
     def prices(self, tickers: Sequence[str], start: str, end: str) -> pd.DataFrame: ...
+
+    def sectors(self, tickers: Sequence[str]) -> dict[str, str]: ...
+
+
+def sectors_from_universe(universe: pd.DataFrame, tickers: Sequence[str]) -> dict[str, str]:
+    lookup = dict(zip(universe["ticker"].astype(str), universe["sector"].astype(str)))
+    return {t: lookup.get(t, "Unknown") for t in tickers}
 
 
 def validate(df: pd.DataFrame, columns: list[str], name: str) -> pd.DataFrame:

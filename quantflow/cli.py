@@ -1,7 +1,8 @@
 """Command line entry point.
 
-    quantflow --start 2012-01-01 --end 2026-10-31 --out reports/quantflow_vs_spy.html
-    quantflow --synthetic --out reports/dry_run.html     # no key needed, mechanics only
+    quantflow --source free --start 2016-07-01 --out reports/free.html   # SEC + Alpaca, $0
+    quantflow --source sharadar --start 2012-01-01 --out reports/sharadar.html
+    quantflow --source synthetic --out reports/dry_run.html             # no keys, mechanics only
 """
 
 from __future__ import annotations
@@ -13,9 +14,11 @@ from dataclasses import replace
 from pathlib import Path
 
 from quantflow.config import BacktestConfig, RiskConfig, ScreenConfig
-from quantflow.data.base import DataProvider
+from quantflow.data.factory import SOURCES, ProviderConfigError, Source, make_provider
 from quantflow.engine import run_backtest
 from quantflow.report import render_html, summarize
+
+FREE_EARLIEST_START = "2016-09-01"   # 2016 data start + RS/ATR warm-up
 
 
 def _load_dotenv(path: Path = Path(".env")) -> None:
@@ -40,7 +43,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--atr-mult", type=float, default=RiskConfig.atr_multiplier)
     p.add_argument("--rs-lookback", type=int, default=ScreenConfig.rs_lookback_days)
     p.add_argument("--exit-on-screen-fail", action="store_true")
-    p.add_argument("--synthetic", action="store_true", help="use fake data (no API key)")
+    p.add_argument("--source", choices=SOURCES, default="free",
+                   help="free = SEC EDGAR + Alpaca; sharadar = paid; synthetic = fake data")
+    p.add_argument("--synthetic", action="store_true", help="shorthand for --source synthetic")
     p.add_argument("--out", default="reports/quantflow_vs_spy.html")
     args = p.parse_args(argv)
 
@@ -51,26 +56,23 @@ def main(argv: list[str] | None = None) -> int:
         risk=replace(RiskConfig(), max_positions=args.max_positions, atr_multiplier=args.atr_mult),
     )
 
-    provider: DataProvider
-    if args.synthetic:
-        from quantflow.data.fixtures import SyntheticProvider
-
-        provider = SyntheticProvider()
-    else:
+    source: Source = "synthetic" if args.synthetic else args.source
+    if source == "free" and args.start < FREE_EARLIEST_START:
+        print(f"note: Alpaca history starts 2016; moving start to {FREE_EARLIEST_START}", file=sys.stderr)
+        cfg = replace(cfg, start=FREE_EARLIEST_START)
+    if source != "synthetic":
         _load_dotenv()
-        from quantflow.data.sharadar import SharadarProvider, SharadarError
-
-        try:
-            provider = SharadarProvider()
-        except SharadarError as e:
-            print(f"error: {e}", file=sys.stderr)
-            return 2
+    try:
+        provider = make_provider(source)
+    except ProviderConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
 
     result = run_backtest(provider, cfg)
     data = summarize(result)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render_html(result, data, synthetic=args.synthetic), encoding="utf-8")
+    out.write_text(render_html(result, data, source=source), encoding="utf-8")
     result.trades.to_csv(out.with_suffix(".trades.csv"), index=False)
     if not result.screens.empty:
         result.screens.to_csv(out.with_suffix(".screens.csv"), index=False)

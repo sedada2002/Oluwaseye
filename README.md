@@ -12,34 +12,54 @@ debt/equity < 0.5, 126-day return above SPY. Ranked by relative strength.
 - Sell 50% at +20%, then move the stop to break-even
 - Entries fill at the next session's open; the stop is checked before the target inside a bar
 
-## No look-ahead, no survivorship bias
+## Data sources
 
-- Fundamentals come from Sharadar SF1 dimension `ART` (as reported, never restated).
-  A filing is only visible on or after its `datekey`, the date it went public.
-  The base-period filing for the CAGR must also be public by the screen date.
-- Prices come from Sharadar SEP, which includes delisted tickers. A name that stops
-  trading is closed at its last price (real delisting returns can be worse; the report says so).
+| | `--source free` | `--source sharadar` |
+|---|---|---|
+| Cost | $0 | Paid Nasdaq Data Link subscription |
+| Fundamentals | SEC EDGAR XBRL, as originally filed | Sharadar SF1 `ART`, as reported |
+| Prices | Alpaca (from 2016) | Sharadar SEP/SFP (from 1998) |
+| Delisted companies | **Mostly missing** (survivorship bias) | Included |
+| Use it for | Go / no-go: is the screen worth paying for? | Trusting the final number |
+
+Both paths are point-in-time: a filing is only visible on or after the day it went
+public (`filed` on EDGAR, `datekey` on Sharadar), and the base-period filing for the
+CAGR must also be public by the screen date. Later restatements never leak backwards.
+
+EDGAR details: TTM revenue is the reported fiscal year, or the sum of the last four
+quarters, with Q4 derived as FY minus Q1-Q3 when it isn't tagged. Revenue concepts are
+merged across the 2018 ASC 606 switch. D/E = total liabilities / stockholders' equity.
+Sectors come from SIC codes mapped to broad buckets.
+
+A name whose prices stop (delisting) is closed at its last price. Real delisting
+returns can be worse, and the report says so.
 
 ## Setup
 
 ```bash
 pip install -e ".[api,dev]"
-cp .env.example .env          # put NASDAQ_DATA_LINK_API_KEY in .env, never commit it
+cp .env.example .env          # fill in keys; never commit .env
 ```
 
-You need a Nasdaq Data Link subscription that covers Sharadar SF1, SEP, SFP and TICKERS
-(the Core US Equities Bundle). A free key alone gets 403s.
+Free path needs:
+- `SEC_USER_AGENT` - a name and contact email, e.g. `QuantFlow research you@example.com` (SEC rule)
+- `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` - free Alpaca account; paper-trading keys work.
+  If Alpaca rejects the `sip` feed on your plan, set `ALPACA_DATA_FEED=iex`.
+
+Sharadar path needs `NASDAQ_DATA_LINK_API_KEY` with a subscription covering SF1,
+SEP, SFP and TICKERS. A key without the subscription gets 403s.
 
 ## Run
 
 ```bash
-quantflow --synthetic --out reports/dry_run.html          # no key: mechanics check only
-quantflow --start 2012-01-01 --end 2026-10-31 --out reports/quantflow_vs_spy.html
+quantflow --source synthetic --out reports/dry_run.html                  # no keys, mechanics only
+quantflow --source free --start 2016-09-01 --out reports/free.html       # $0 go/no-go test
+quantflow --source sharadar --start 2012-01-01 --out reports/sharadar.html
 ```
 
-The first real run downloads the full SF1 ART table plus prices for every ticker that
-ever passes the fundamental legs. It's cached under `.cache/sharadar/`, so later runs
-are fast. Delete the cache to refresh.
+First free run: about 6,000 SEC requests at 8 per second (roughly 15 minutes), then
+Alpaca prices for the candidates. Parsed results are cached under `.cache/`, so later
+runs take seconds. Delete `.cache/` to refresh.
 
 Outputs: the HTML report, `*.trades.csv` (every round trip), `*.screens.csv` (every
 screen pass with CAGR, D/E, RS).
@@ -48,8 +68,8 @@ screen pass with CAGR, D/E, RS).
 
 ```bash
 uvicorn quantflow.api:app --port 8000
-curl -X POST localhost:8000/backtest -H 'content-type: application/json' -d '{"start":"2015-01-01"}'
-curl -X POST localhost:8000/backtest/report -H 'content-type: application/json' -d '{}' > report.html
+curl -X POST localhost:8000/backtest -H 'content-type: application/json' -d '{"source":"free","start":"2016-09-01"}'
+curl -X POST localhost:8000/backtest/report -H 'content-type: application/json' -d '{"source":"free"}' > report.html
 ```
 
 ## Test
@@ -64,6 +84,7 @@ mypy quantflow  # strict
 - Dividends are excluded on both sides (price return vs price return).
 - Daily bars can't tell whether the stop or the target hit first in a bar; the engine assumes the stop.
 - Slippage is a flat 5 bps; small caps will cost more.
+- Free data: survivorship bias and history from 2016 only (about two full market regimes).
 - Sharadar's license bars publishing evaluations of its data without permission.
 
-Data from [Sharadar](http://www.sharadar.com).
+Data from [Sharadar](http://www.sharadar.com) when run with `--source sharadar`.

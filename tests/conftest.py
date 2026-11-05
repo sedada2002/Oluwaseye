@@ -23,6 +23,9 @@ class MiniProvider:
     def fundamentals(self) -> pd.DataFrame:
         return self.fundamentals_df.copy()
 
+    def sectors(self, tickers: Sequence[str]) -> dict[str, str]:
+        return {t: "Technology" for t in tickers}
+
     def prices(self, tickers: Sequence[str], start: str, end: str) -> pd.DataFrame:
         frames = []
         for t, s in ((self.ticker, self.closes), ("SPY", self.spy)):

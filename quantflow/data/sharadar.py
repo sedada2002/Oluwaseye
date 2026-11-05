@@ -29,6 +29,7 @@ from quantflow.data.base import (
     FUNDAMENTAL_COLUMNS,
     PRICE_COLUMNS,
     UNIVERSE_COLUMNS,
+    sectors_from_universe,
     validate,
 )
 
@@ -74,6 +75,9 @@ class SharadarProvider:
         df["isdelisted"] = df["isdelisted"].astype(str).str.upper().eq("Y")
         df["sector"] = df["sector"].fillna("Unknown")
         return validate(df.drop_duplicates("ticker"), UNIVERSE_COLUMNS, "universe")
+
+    def sectors(self, tickers: Sequence[str]) -> dict[str, str]:
+        return sectors_from_universe(self.universe(), tickers)
 
     def fundamentals(self) -> pd.DataFrame:
         df = self._table(

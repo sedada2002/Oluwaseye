@@ -88,11 +88,12 @@ def run_backtest(provider: DataProvider, cfg: BacktestConfig | None = None) -> B
     rc, sc = cfg.risk, cfg.screen
     notes: list[str] = []
 
-    universe = provider.universe().set_index("ticker")
-    sector_of: dict[str, str] = {str(k): str(v) for k, v in universe["sector"].items()}
+    universe = provider.universe()
     fund = provider.fundamentals()
-    fund = fund[fund["ticker"].isin(universe.index)]
+    fund = fund[fund["ticker"].isin(universe["ticker"])]
     candidates = fundamental_candidates(fund, sc)
+    sector_of = provider.sectors(candidates)
+    notes.extend(getattr(provider, "caveats", []))
     notes.append(f"{len(candidates)} tickers pass the fundamental legs on at least one filing.")
 
     # Warm-up so ATR and RS lookbacks are populated on the first rebalance day
